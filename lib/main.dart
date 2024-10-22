@@ -1,4 +1,7 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'db_helper.dart'; // Import your SQLite helper
 
 void main() {
   runApp(const MyApp());
@@ -7,119 +10,384 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Virtual Aquarium',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
+        primarySwatch: Colors.blue,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const AquariumScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class Fish {
+  Color color;
+  double speed;
+  Offset position;
+  Offset direction;
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  Fish({
+    required this.color,
+    required this.speed,
+    required this.position,
+    required this.direction,
+  });
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class AquariumScreen extends StatefulWidget {
+  const AquariumScreen({super.key});
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  @override
+  _AquariumScreenState createState() => _AquariumScreenState();
+}
+
+class _AquariumScreenState extends State<AquariumScreen>
+    with SingleTickerProviderStateMixin {
+  List<Fish> fishes = [];
+  Timer? _timer;
+  Color _selectedColor = Colors.blue;
+  double _selectedSpeed = 2.0;
+  Color _selectedAddColor = Colors.red;
+  Color _selectedRemoveColor = Colors.red;
+
+  final List<Color> availableColors = [
+    Colors.red,
+    Colors.green,
+    Colors.blue,
+    Colors.yellow,
+    Colors.purple,
+    Colors.orange,
+    Colors.pink,
+    Colors.brown,
+    Colors.cyan,
+    Colors.amber,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedSettings();
   }
 
   @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  // Load settings from SQLite
+  Future<void> _loadSavedSettings() async {
+    List<Map<String, dynamic>> savedFishes =
+        await DatabaseHelper.instance.loadFishes();
+    setState(() {
+      fishes = savedFishes.map((fish) {
+        Color color = Color(int.parse(fish['color']));
+        return Fish(
+          color: color,
+          speed: fish['speed'],
+          position:
+              Offset(Random().nextDouble() * 300, Random().nextDouble() * 300),
+          direction:
+              Offset(Random().nextDouble() - 0.5, Random().nextDouble() - 0.5),
+        );
+      }).toList();
+    });
+  }
+
+  // Save settings to SQLite
+  Future<void> _saveSettings() async {
+    if (fishes.isEmpty) {
+      _showErrorDialog('No Fish to Save', 'You must add fish before saving.');
+      return;
+    }
+
+    List<Map<String, dynamic>> fishData = fishes.map((fish) {
+      return {
+        'color': fish.color.value.toString(),
+        'speed': fish.speed,
+      };
+    }).toList();
+    await DatabaseHelper.instance.saveFish(fishData);
+  }
+
+  // Create a new Fish
+  Fish _createFish(Color color) {
+    final random = Random();
+    return Fish(
+      color: color,
+      speed: _selectedSpeed,
+      position: Offset(random.nextDouble() * 300, random.nextDouble() * 300),
+      direction: Offset(random.nextDouble() - 0.5, random.nextDouble() - 0.5),
+    );
+  }
+
+  // Add new fish with error handling
+  void _addFish() {
+    if (fishes.length >= 10) {
+      _showErrorDialog('Fish Limit Reached', 'Cannot add more than 10 fish.');
+    } else {
+      setState(() {
+        fishes.add(_createFish(_selectedAddColor));
+      });
+    }
+  }
+
+  // Remove fish by color with error handling
+  void _removeFish() {
+    int removedFishCount =
+        fishes.where((fish) => fish.color == _selectedRemoveColor).length;
+
+    if (removedFishCount == 0) {
+      _showErrorDialog(
+          'No Fish to Remove', 'There are no fish of this color to remove.');
+    } else {
+      setState(() {
+        fishes.removeWhere((fish) => fish.color == _selectedRemoveColor);
+      });
+      // Remove from database
+      DatabaseHelper.instance
+          .removeFishByColor(_selectedRemoveColor.value.toString());
+    }
+  }
+
+  // Start fish animation
+  void _startAnimation() {
+    _timer = Timer.periodic(const Duration(milliseconds: 30), (timer) {
+      setState(() {
+        for (var fish in fishes) {
+          fish.position += fish.direction * fish.speed;
+          if (fish.position.dx <= 0 || fish.position.dx >= 300) {
+            fish.direction = Offset(-fish.direction.dx, fish.direction.dy);
+          }
+          if (fish.position.dy <= 0 || fish.position.dy >= 300) {
+            fish.direction = Offset(fish.direction.dx, -fish.direction.dy);
+          }
+        }
+      });
+    });
+  }
+
+  // Show error dialogs
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
             ),
           ],
-        ),
+        );
+      },
+    );
+  }
+
+  // UI Elements for fish control
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Virtual Aquarium'),
+        backgroundColor: Colors.teal,
+      ),
+      body: Column(
+        children: [
+          // Aquarium with background gradient
+          Container(
+            width: 300,
+            height: 300,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.lightBlueAccent, Colors.blue],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 10,
+                  offset: Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: fishes.map((fish) {
+                return Positioned(
+                  left: fish.position.dx,
+                  top: fish.position.dy,
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: fish.color,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black45,
+                          blurRadius: 5,
+                          offset: Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Speed Control Section
+          _buildSpeedControlSection(),
+
+          // Add Fish Section with a polished button
+          _buildAddFishSection(),
+
+          // Remove Fish Section with polished button
+          _buildRemoveFishSection(),
+
+          // Save Settings Button
+          ElevatedButton(
+            onPressed: _saveSettings,
+            style: ElevatedButton.styleFrom(
+              foregroundColor: Color.fromARGB(255, 246, 244, 244),
+              backgroundColor: Colors.teal, // Polished button color
+              textStyle: TextStyle(fontWeight: FontWeight.bold),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            child: const Text('Save Settings'),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+        onPressed: _startAnimation,
+        backgroundColor: Colors.teal,
+        child: const Icon(Icons.play_arrow),
+      ),
+    );
+  }
+
+  // Speed control UI
+  Widget _buildSpeedControlSection() {
+    return Column(
+      children: [
+        DropdownButton<Color>(
+          value: _selectedColor,
+          items: availableColors.map((color) {
+            return DropdownMenuItem(
+              value: color,
+              child: Container(
+                width: 24,
+                height: 24,
+                color: color,
+              ),
+            );
+          }).toList(),
+          onChanged: (newColor) {
+            setState(() {
+              _selectedColor = newColor!;
+            });
+          },
+        ),
+        Slider(
+          value: _selectedSpeed,
+          min: 1.0,
+          max: 5.0,
+          divisions: 4,
+          label: _selectedSpeed.toString(),
+          activeColor: _selectedColor,
+          onChanged: (value) {
+            setState(() {
+              _selectedSpeed = value;
+              for (var fish
+                  in fishes.where((fish) => fish.color == _selectedColor)) {
+                fish.speed = _selectedSpeed;
+              }
+            });
+          },
+        ),
+        const Text('Adjust Speed'),
+      ],
+    );
+  }
+
+  // Add Fish UI
+  Widget _buildAddFishSection() {
+    return Column(
+      children: [
+        DropdownButton<Color>(
+          value: _selectedAddColor,
+          items: availableColors.map((color) {
+            return DropdownMenuItem(
+              value: color,
+              child: Container(
+                width: 24,
+                height: 24,
+                color: color,
+              ),
+            );
+          }).toList(),
+          onChanged: (newColor) {
+            setState(() {
+              _selectedAddColor = newColor!;
+            });
+          },
+        ),
+        ElevatedButton(
+          onPressed: _addFish,
+          style: ElevatedButton.styleFrom(
+            foregroundColor: Color.fromARGB(255, 246, 244, 244),
+            backgroundColor: Colors.teal,
+            textStyle: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          child: const Text('Add Fish'),
+        ),
+      ],
+    );
+  }
+
+  // Remove Fish UI
+  Widget _buildRemoveFishSection() {
+    return Column(
+      children: [
+        DropdownButton<Color>(
+          value: _selectedRemoveColor,
+          items: availableColors.map((color) {
+            return DropdownMenuItem(
+              value: color,
+              child: Container(
+                width: 24,
+                height: 24,
+                color: color,
+              ),
+            );
+          }).toList(),
+          onChanged: (newColor) {
+            setState(() {
+              _selectedRemoveColor = newColor!;
+            });
+          },
+        ),
+        ElevatedButton(
+          onPressed: _removeFish,
+          style: ElevatedButton.styleFrom(
+            foregroundColor: Color.fromARGB(255, 246, 244, 244),
+            backgroundColor: Colors.redAccent,
+            textStyle: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          child: const Text(
+              selectionColor: Color.fromARGB(255, 246, 244, 244),
+              'Remove Fish'),
+        ),
+      ],
     );
   }
 }
