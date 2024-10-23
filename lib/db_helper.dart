@@ -45,7 +45,7 @@ class DatabaseHelper {
   }
 
   Future<void> removeFishByColor(String color) async {
-    final db = await database;
+    final db = await instance.database;
     await db.delete(
       'Fish',
       where: 'color = ?',

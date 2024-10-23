@@ -47,6 +47,7 @@ class _AquariumScreenState extends State<AquariumScreen>
     with SingleTickerProviderStateMixin {
   List<Fish> fishes = [];
   Timer? _timer;
+  bool isPlaying = false; // Track whether animation is playing
   Color _selectedColor = Colors.blue;
   double _selectedSpeed = 2.0;
   Color _selectedAddColor = Colors.red;
@@ -81,9 +82,10 @@ class _AquariumScreenState extends State<AquariumScreen>
   Future<void> _loadSavedSettings() async {
     List<Map<String, dynamic>> savedFishes =
         await DatabaseHelper.instance.loadFishes();
+
     setState(() {
       fishes = savedFishes.map((fish) {
-        Color color = Color(int.parse(fish['color']));
+        Color color = Color(int.parse(fish['color'])); // Parse as int
         return Fish(
           color: color,
           speed: fish['speed'],
@@ -136,17 +138,21 @@ class _AquariumScreenState extends State<AquariumScreen>
 
   // Remove fish by color with error handling
   void _removeFish() {
-    int removedFishCount =
-        fishes.where((fish) => fish.color == _selectedRemoveColor).length;
+    int removedFishCount = fishes
+        .where((fish) => fish.color.value == _selectedRemoveColor.value)
+        .length; // Compare color values directly
 
     if (removedFishCount == 0) {
       _showErrorDialog(
           'No Fish to Remove', 'There are no fish of this color to remove.');
     } else {
       setState(() {
-        fishes.removeWhere((fish) => fish.color == _selectedRemoveColor);
+        // Remove fish from the list in memory
+        fishes.removeWhere(
+            (fish) => fish.color.value == _selectedRemoveColor.value);
       });
-      // Remove from database
+
+      // Remove from the database as well
       DatabaseHelper.instance
           .removeFishByColor(_selectedRemoveColor.value.toString());
     }
@@ -166,6 +172,18 @@ class _AquariumScreenState extends State<AquariumScreen>
           }
         }
       });
+    });
+  }
+
+  // Toggle play/pause
+  void _togglePlayPause() {
+    if (isPlaying) {
+      _timer?.cancel(); // Pause the animation
+    } else {
+      _startAnimation(); // Start the animation
+    }
+    setState(() {
+      isPlaying = !isPlaying; // Toggle play/pause state
     });
   }
 
@@ -268,9 +286,9 @@ class _AquariumScreenState extends State<AquariumScreen>
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _startAnimation,
+        onPressed: _togglePlayPause, // Toggle play/pause
         backgroundColor: Colors.teal,
-        child: const Icon(Icons.play_arrow),
+        child: Icon(isPlaying ? Icons.pause : Icons.play_arrow), // Change icon
       ),
     );
   }
@@ -300,8 +318,8 @@ class _AquariumScreenState extends State<AquariumScreen>
         Slider(
           value: _selectedSpeed,
           min: 1.0,
-          max: 5.0,
-          divisions: 4,
+          max: 10.0, // Adjusted max speed for more control
+          divisions: 9,
           label: _selectedSpeed.toString(),
           activeColor: _selectedColor,
           onChanged: (value) {
@@ -383,9 +401,7 @@ class _AquariumScreenState extends State<AquariumScreen>
             backgroundColor: Colors.redAccent,
             textStyle: TextStyle(fontWeight: FontWeight.bold),
           ),
-          child: const Text(
-              selectionColor: Color.fromARGB(255, 246, 244, 244),
-              'Remove Fish'),
+          child: const Text('Remove Fish'),
         ),
       ],
     );
